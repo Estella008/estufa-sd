@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package estufa;
+
+service Controlador {
+  rpc ObterStatus (StatusRequest) returns (StatusResponse);
+  rpc DefinirModo (ModoRequest) returns (ModoResponse);
+  rpc InjetarFalha (FalhaRequest) returns (ModoResponse);
+}
+
+service Estufa {
+  rpc ObterStatus (StatusRequest) returns (StatusResponse);
+  rpc DefinirModo (ModoRequest) returns (ModoResponse);
+}
+
+message StatusRequest {
+  string cultura = 1;
+}
+
+message Faixa {
+  double minimo = 1;
+  double maximo = 2;
+}
+
+message Atuador {
+  bool ligado = 1;
+  string modo = 2;
+}
+
+message StatusResponse {
+  string cultura = 1;
+  map<string, double> leituras = 2;
+  map<string, Atuador> atuadores = 3;
+  map<string, Faixa> faixas = 4;
+  int32 controlador_id = 5;
+  bool lider = 6;
+  int32 votos = 7;
+  int32 consultados = 8;
+  repeated int32 divergentes = 9;
+}
+
+message ModoRequest {
+  string cultura = 1;
+  string atuador = 2;
+  string modo = 3;
+}
+
+message ModoResponse {
+  bool ok = 1;
+  string mensagem = 2;
+  int32 confirmacoes = 3;
+}
+
+message FalhaRequest {
+  bool ativa = 1;
+}

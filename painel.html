@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estufa inteligente</title>
+<style>
+  :root {
+    --fundo: #f3f1ea;
+    --cartao: #fffdf8;
+    --borda: #dcd8cc;
+    --texto: #23261f;
+    --suave: #6d7166;
+    --verde: #2f6b3a;
+    --verde-claro: #e3efdf;
+    --faixa: #cfe4c8;
+    --vermelho: #a8382c;
+    --vermelho-claro: #f6e1dd;
+    --ambar: #9a6a12;
+    --ambar-claro: #f7ebcf;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: var(--fundo); color: var(--texto); }
+
+  header {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px;
+    padding: 16px 32px; background: var(--cartao); border-bottom: 1px solid var(--borda);
+  }
+  header h1 { font-size: 21px; font-weight: 600; margin: 0; }
+  nav { display: flex; gap: 4px; flex: 1; }
+  nav button { background: transparent; color: var(--suave); border: 0; padding: 8px 14px; }
+  nav button.ativa { background: var(--verde-claro); color: var(--verde); }
+  .info { font-size: 13px; color: var(--suave); }
+
+  main { padding: 24px 32px 48px; max-width: 1300px; margin: 0 auto; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--suave); margin: 28px 0 12px; }
+  h2:first-child { margin-top: 0; }
+  .grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
+  .cartao {
+    background: var(--cartao); border: 1px solid var(--borda); border-radius: 12px;
+    padding: 18px; display: flex; flex-direction: column; gap: 14px;
+  }
+  .cartao.desatualizado { opacity: .55; }
+  .topo { display: flex; align-items: center; gap: 8px; }
+  .topo strong { flex: 1; font-size: 18px; }
+
+  .pilula {
+    font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  }
+  .pilula::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .ok { background: var(--verde-claro); color: var(--verde); }
+  .fora { background: var(--vermelho-claro); color: var(--vermelho); }
+  .alerta { background: var(--ambar-claro); color: var(--ambar); }
+  .sem-ponto::before { display: none; }
+
+  .leitura { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: baseline; }
+  .leitura .nome { font-size: 14px; color: var(--suave); }
+  .leitura .valor { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+  .leitura .valor small { font-size: 13px; font-weight: 400; color: var(--suave); margin-left: 3px; }
+  .leitura.abaixo .valor, .leitura.acima .valor { color: var(--vermelho); }
+  .barra { grid-column: 1 / -1; position: relative; height: 8px; border-radius: 4px; background: #ebe8df; }
+  .barra .ideal { position: absolute; top: 0; bottom: 0; background: var(--faixa); border-radius: 4px; }
+  .barra .marcador {
+    position: absolute; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px;
+    border-radius: 50%; background: var(--verde); border: 2px solid var(--cartao); transition: left .6s;
+  }
+  .leitura.abaixo .marcador, .leitura.acima .marcador { background: var(--vermelho); }
+  .legenda { grid-column: 1 / -1; display: flex; justify-content: space-between; font-size: 12px; color: var(--suave); }
+  .grafico { grid-column: 1 / -1; width: 100%; height: 30px; }
+  .grafico polyline { fill: none; stroke: var(--verde); stroke-width: 1.5; }
+
+  .atuadores { border-top: 1px solid var(--borda); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .atuador { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+  .atuador .nome { flex: 1; }
+  .chave { display: flex; border: 1px solid var(--borda); border-radius: 8px; overflow: hidden; }
+  .chave button {
+    border: 0; border-radius: 0; padding: 5px 10px; font-size: 12px;
+    background: transparent; color: var(--suave); font-weight: 600;
+  }
+  .chave button + button { border-left: 1px solid var(--borda); }
+  .chave button.ativo { background: var(--verde); color: #fff; }
+  .chave button.ativo.manual { background: var(--ambar); }
+  .rodape { font-size: 12px; color: var(--suave); line-height: 1.6; }
+  .rodape .divergiu { color: var(--vermelho); font-weight: 600; }
+  .rodape .sem-verificacao { color: var(--ambar); font-weight: 600; }
+
+  pre {
+    margin: 0; height: 150px; overflow-y: auto; background: #1f231d; color: #d6e3cf;
+    border-radius: 8px; padding: 10px; font-size: 11.5px; line-height: 1.5;
+    font-family: Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; word-break: break-word;
+  }
+
+  button {
+    font: inherit; font-size: 14px; font-weight: 600; border: 1px solid transparent;
+    border-radius: 8px; padding: 8px 16px; cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: wait; }
+  .ligar { background: var(--verde); color: #fff; }
+  .derrubar { background: var(--vermelho-claro); color: var(--vermelho); border-color: #e7bdb5; }
+
+  #aviso { margin: 16px 32px 0; padding: 12px 16px; border-radius: 8px; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Estufa inteligente</h1>
+  <nav>
+    <button id="aba-estufa" class="ativa" onclick="mostrarAba('estufa')">Estufa</button>
+    <button id="aba-infra" onclick="mostrarAba('infra')">Infraestrutura</button>
+  </nav>
+  <span class="info" id="atualizado"></span>
+  <span id="broker" class="pilula fora">broker MQTT</span>
+</header>
+
+<div id="aviso" hidden></div>
+
+<main>
+  
+  <section id="tela-estufa">
+    <div class="grade" id="culturas"></div>
+  </section>
+
+  <section id="tela-infra" hidden>
+    <div style="display:flex; gap:8px; margin-bottom:8px">
+      <button class="ligar" onclick="acao('/api/iniciar-tudo', this)">Iniciar tudo</button>
+      <button class="derrubar" onclick="acao('/api/parar-tudo', this)">Parar tudo</button>
+    </div>
+    <h2>Controladores (réplicas)</h2>
+    <div class="grade" id="controlador"></div>
+    <h2>Middleware</h2>
+    <div class="grade" id="middleware"></div>
+    <h2>Atuadores</h2>
+    <div class="grade" id="atuador"></div>
+    <h2>Sensores</h2>
+    <div class="grade" id="sensor"></div>
+  </section>
+</main>
+
+<script>
+
+const GRANDEZAS = {
+  temperatura:  { nome: "Temperatura",     unidade: "°C",   max: 45 },
+  umidade_solo: { nome: "Umidade do solo", unidade: "%",    max: 100 },
+  luminosidade: { nome: "Luminosidade",    unidade: "klux", max: 100 },
+  umidade_ar:   { nome: "Umidade do ar",   unidade: "%",    max: 100 },
+};
+const ATUADORES = { irrigacao: "Irrigação", ventilacao: "Ventilação", aquecimento: "Aquecimento", iluminacao: "Iluminação" };
+const MODOS = { auto: "Auto", ligado: "Ligar", desligado: "Desligar" };
+const historico = {};
+
+function mostrarAba(aba) {
+  document.getElementById("tela-estufa").hidden = aba !== "estufa";
+  document.getElementById("tela-infra").hidden = aba !== "infra";
+  document.getElementById("aba-estufa").classList.toggle("ativa", aba === "estufa");
+  document.getElementById("aba-infra").classList.toggle("ativa", aba === "infra");
+}
+
+let timerAviso;
+function aviso(texto, tipo = "fora") {
+  const el = document.getElementById("aviso");
+  clearTimeout(timerAviso);
+  el.hidden = !texto;
+  el.textContent = texto;
+  el.className = tipo;
+  if (texto && tipo === "ok") timerAviso = setTimeout(() => (el.hidden = true), 3000);
+}
+
+async function post(url, corpo) {
+  const resposta = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: corpo ? JSON.stringify(corpo) : undefined,
+  });
+  const dados = await resposta.json();
+  if (!resposta.ok) throw new Error(dados.detail);
+  return dados;
+}
+
+const capitalizar = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+
+function criarCartaoCultura(c) {
+  const div = document.createElement("div");
+  div.className = "cartao";
+  div.id = "cultura-" + c.cultura;
+
+  let html = `<div class="topo"><strong>${capitalizar(c.cultura)}</strong><span class="pilula situacao"></span></div>`;
+  for (const g in GRANDEZAS) {
+    html += `
+      <div class="leitura" data-g="${g}">
+        <span class="nome">${GRANDEZAS[g].nome}</span>
+        <span class="valor">–<small>${GRANDEZAS[g].unidade}</small></span>
+        <div class="barra"><div class="ideal"></div><div class="marcador"></div></div>
+        <div class="legenda"><span class="estado"></span><span class="faixa"></span></div>
+        <svg class="grafico" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline/></svg>
+      </div>`;
+  }
+  html += `<div class="atuadores">`;
+  for (const a in ATUADORES) {
+    html += `<div class="atuador" data-a="${a}">
+        <span class="nome">${ATUADORES[a]}</span>
+        <span class="pilula estado-atuador"></span>
+        <div class="chave">${Object.keys(MODOS).map(m =>
+          `<button data-modo="${m}" onclick="definirModo('${c.cultura}', '${a}', '${m}', this)">${MODOS[m]}</button>`).join("")}
+        </div>
+      </div>`;
+  }
+  html += `</div><div class="rodape"></div>`;
+  div.innerHTML = html;
+  document.getElementById("culturas").appendChild(div);
+  return div;
+}
+
+function desenharCultura(c) {
+  const div = document.getElementById("cultura-" + c.cultura) || criarCartaoCultura(c);
+  div.classList.remove("desatualizado");
+  let foraDaFaixa = 0;
+
+  for (const g in GRANDEZAS) {
+    const linha = div.querySelector(`[data-g="${g}"]`);
+    const valor = c.leituras[g];
+    if (valor === undefined) continue;
+    const faixa = c.faixas[g];
+    const max = GRANDEZAS[g].max;
+
+    let situacao = "monitorada";
+    linha.classList.remove("abaixo", "acima");
+    if (faixa) {
+      if (valor < faixa[0]) { situacao = "▼ abaixo do ideal"; linha.classList.add("abaixo"); foraDaFaixa++; }
+      else if (valor > faixa[1]) { situacao = "▲ acima do ideal"; linha.classList.add("acima"); foraDaFaixa++; }
+      else situacao = "dentro do ideal";
+      const ideal = linha.querySelector(".ideal");
+      ideal.style.left = (faixa[0] / max * 100) + "%";
+      ideal.style.width = ((faixa[1] - faixa[0]) / max * 100) + "%";
+      linha.querySelector(".faixa").textContent = `ideal ${faixa[0]}–${faixa[1]} ${GRANDEZAS[g].unidade}`;
+    }
+    linha.querySelector(".valor").innerHTML = `${valor.toFixed(1)}<small>${GRANDEZAS[g].unidade}</small>`;
+    linha.querySelector(".marcador").style.left = Math.min(100, valor / max * 100) + "%";
+    linha.querySelector(".estado").textContent = situacao;
+
+    const chave = c.cultura + "/" + g;
+    historico[chave] = (historico[chave] || []).concat(valor).slice(-60);
+    const pontos = historico[chave].map((v, i) => `${i * 100 / 59},${30 - (v / max) * 28 - 1}`).join(" ");
+    linha.querySelector("polyline").setAttribute("points", pontos);
+  }
+
+  for (const a in ATUADORES) {
+    const linha = div.querySelector(`[data-a="${a}"]`);
+    const info = c.atuadores[a];
+    const pilula = linha.querySelector(".estado-atuador");
+    pilula.textContent = info.ligado ? "ligado" : "desligado";
+    pilula.className = "pilula estado-atuador " + (info.ligado ? "ok" : "sem-ponto");
+    linha.querySelectorAll(".chave button").forEach(b => {
+      b.classList.toggle("ativo", b.dataset.modo === info.modo);
+      b.classList.toggle("manual", info.modo !== "auto");
+    });
+  }
+
+  const situacao = div.querySelector(".situacao");
+  situacao.textContent = foraDaFaixa ? `${foraDaFaixa} fora do ideal` : "tudo no ideal";
+  situacao.className = "pilula situacao " + (foraDaFaixa ? "alerta" : "ok");
+
+  let rodape = `confirmado por ${c.votos} de ${c.consultados} réplicas · controlador ${c.controlador_id}${c.lider ? " (líder)" : ""}`;
+  if (c.consultados === 1)
+    rodape += `<br><span class="sem-verificacao">só uma réplica respondeu: dado não verificado</span>`;
+  if (c.divergentes.length)
+    rodape += `<br><span class="divergiu">⚠ controlador ${c.divergentes.join(", ")} divergiu da maioria e foi ignorado</span>`;
+  div.querySelector(".rodape").innerHTML = rodape;
+}
+
+async function definirModo(cultura, atuador, modo, botao) {
+  botao.disabled = true;
+  try {
+    const r = await post(`/api/estufa/${cultura}/${atuador}`, { modo });
+    aviso(`${ATUADORES[atuador]} do ${cultura}: ${MODOS[modo].toLowerCase()} · ${r.mensagem}`, "ok");
+  } catch (e) {
+    aviso(e.message);
+  }
+  botao.disabled = false;
+  atualizarEstufa();
+}
+
+let estufaComErro = false;
+async function atualizarEstufa() {
+  try {
+    const resposta = await fetch("/api/estufa");
+    const dados = await resposta.json();
+    if (!resposta.ok) throw new Error(dados.detail);
+    dados.culturas.forEach(desenharCultura);
+    document.getElementById("atualizado").textContent = "atualizado " + new Date().toLocaleTimeString("pt-BR");
+    if (estufaComErro) { aviso(""); estufaComErro = false; }
+  } catch (e) {
+    document.querySelectorAll("#culturas .cartao").forEach(d => d.classList.add("desatualizado"));
+    aviso("Sem comunicação com a estufa: " + e.message);
+    estufaComErro = true;
+  }
+}
+
+async function acao(url, botao) {
+  if (botao) botao.disabled = true;
+  try { await post(url); } catch (e) { aviso(e.message); }
+  if (botao) botao.disabled = false;
+  atualizarInfra();
+}
+
+function criarCartaoComponente(c) {
+  const div = document.createElement("div");
+  div.className = "cartao";
+  div.id = "comp-" + c.nome;
+  div.innerHTML = `
+    <div class="topo">
+      <strong>${c.nome}</strong>
+      <span class="pilula alerta sem-ponto lider" hidden>LÍDER</span>
+      <span class="pilula fora sem-ponto invadido" hidden>INVADIDO</span>
+      <span class="pilula status"></span>
+    </div>
+    <pre></pre>
+    <div style="display:flex; gap:8px"><button class="principal"></button><button class="falha derrubar" hidden></button></div>`;
+  document.getElementById(c.tipo).appendChild(div);
+  return div;
+}
+
+function desenharComponente(c) {
+  const div = document.getElementById("comp-" + c.nome) || criarCartaoComponente(c);
+  const status = div.querySelector(".status");
+  status.textContent = c.rodando ? "rodando" : "parado";
+  status.className = "pilula status " + (c.rodando ? "ok" : "fora");
+  div.querySelector(".lider").hidden = c.lider !== true;
+
+  const pre = div.querySelector("pre");
+  const estavaNoFim = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 5;
+  pre.textContent = c.log.join("\n");
+  if (estavaNoFim) pre.scrollTop = pre.scrollHeight;
+
+  const botao = div.querySelector(".principal");
+  botao.textContent = c.rodando ? "Derrubar" : "Ligar";
+  botao.className = "principal " + (c.rodando ? "derrubar" : "ligar");
+  botao.onclick = () => acao(`/api/componentes/${c.nome}/${c.rodando ? "parar" : "iniciar"}`, botao);
+
+  div.querySelector(".invadido").hidden = !c.invadido;
+  const falha = div.querySelector(".falha");
+  falha.hidden = c.tipo !== "controlador" || !c.rodando;
+  falha.textContent = c.invadido ? "Restaurar" : "Invadir";
+  falha.onclick = async () => {
+    falha.disabled = true;
+    try { await post(`/api/componentes/${c.nome}/falha`, { ativa: !c.invadido }); } catch (e) { aviso(e.message); }
+    falha.disabled = false;
+    atualizarInfra();
+  };
+}
+
+async function atualizarInfra() {
+  try {
+    const dados = await (await fetch("/api/componentes")).json();
+    const broker = document.getElementById("broker");
+    broker.className = "pilula " + (dados.broker ? "ok" : "fora");
+    broker.textContent = dados.broker ? "broker MQTT online" : "broker MQTT offline";
+    dados.componentes.forEach(desenharComponente);
+  } catch (e) {
+    aviso("O painel.py não está respondendo.");
+  }
+}
+
+function ciclo() { atualizarEstufa(); atualizarInfra(); }
+ciclo();
+setInterval(ciclo, 1000);
+</script>
+</body>
+</html>
