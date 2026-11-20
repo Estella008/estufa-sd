@@ -1,7 +1,3 @@
-\
-\
-\
-
 NUM_CONTROLADORES = 3
 PORTA_MIDDLEWARE = 50050
 def porta_controlador(id):
