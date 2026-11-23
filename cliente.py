@@ -1,23 +1,29 @@
+# Cliente: acompanha e controla a estufa através do middleware.
+import middleware
+from config import grandezas, atuadores
 
-import sys
-import grpc
-import estufa_pb2 as pb2
-import estufa_pb2_grpc as pb2_grpc
-from config import PORTA_MIDDLEWARE
+while True:
+    print("\n1) Ver estado   2) Acionar atuador   0) Sair")
+    op = input("> ").strip()
+    if op == "0":
+        break
+    if op not in ("1", "2"):
+        continue
 
-with grpc.insecure_channel(f"localhost:{PORTA_MIDDLEWARE}") as canal:
-    stub = pb2_grpc.EstufaStub(canal)
+    cultura = input(f"cultura {list(grandezas)}: ").strip()
     try:
-        if len(sys.argv) == 4:
-            _, cultura, atuador, modo = sys.argv
-            r = stub.DefinirModo(pb2.ModoRequest(cultura=cultura, atuador=atuador, modo=modo), timeout=5)
-            print(r.mensagem)
+        if op == "1":
+            r = middleware.obter_status(cultura)
+            papel = "líder" if r.lider else "réplica"
+            print(f"\n{cultura.upper()} (resposta do controlador {r.controlador_id}, {papel})")
+            for grandeza, valor in sorted(r.leituras.items()):
+                print(f"  {grandeza:<14} {valor}")
+            for atuador, ligado in sorted(r.atuadores.items()):
+                print(f"  {atuador:<14} {'LIGADO' if ligado else 'desligado'}")
         else:
-            r = stub.ObterStatus(pb2.StatusRequest(cultura=sys.argv[1]), timeout=5)
-            print(f"respondido pelo controlador {r.controlador_id} (líder? {r.lider})")
-            for grandeza, valor in r.leituras.items():
-                print(f"  {grandeza:<13} {valor}")
-            for nome, a in r.atuadores.items():
-                print(f"  {nome:<13} {'LIGADO' if a.ligado else 'desligado'} ({a.modo})")
-    except grpc.RpcError as erro:
-        print("falhou:", erro.code(), erro.details())
+            atuador = input(f"atuador {atuadores}: ").strip()
+            modo = input("ligar / desligar / auto: ").strip().lower()
+            ok, msg = middleware.acionar(cultura, atuador, modo)
+            print("OK:" if ok else "FALHOU:", msg)
+    except (ValueError, RuntimeError) as erro:
+        print("Erro:", erro)

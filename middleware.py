@@ -1,101 +1,89 @@
-
-
-from concurrent import futures
+# Middleware: o cliente só conversa com ele.
+# Ele esconde as réplicas, trata quedas e compara as respostas.
 import grpc
 import estufa_pb2 as pb2
 import estufa_pb2_grpc as pb2_grpc
-from config import NUM_CONTROLADORES, PORTA_MIDDLEWARE, porta_controlador
+from config import controladores_validos
 
-TIMEOUT_S = 1.0
-TOLERANCIA = 5.0
-MAIORIA = NUM_CONTROLADORES // 2 + 1
+TOLERANCIA = 3.0   # diferença aceitável entre réplicas (leituras chegam em momentos diferentes)
 
-ERROS_DE_INDISPONIBILIDADE = (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED)
-
-stubs = {
-    i: pb2_grpc.ControladorStub(grpc.insecure_channel(f"localhost:{porta_controlador(i)}"))
-    for i in range(1, NUM_CONTROLADORES + 1)
+# valores fisicamente possíveis; fora disso a resposta é descartada
+LIMITES = {
+    "temperatura": (-10, 60),
+    "umidade_ar": (0, 100),
+    "umidade_solo": (0, 100),
+    "luminosidade": (0, 150),
 }
 
-class ServicoEstufa(pb2_grpc.EstufaServicer):
 
-    def ObterStatus(self, request, context):
+def _stub(controlador_id):
+    canal = grpc.insecure_channel(f"localhost:{50050 + controlador_id}")
+    return pb2_grpc.ControladorStub(canal)
 
-        with futures.ThreadPoolExecutor(max_workers=len(stubs)) as executor:
-            pedidos = {i: executor.submit(stub.ObterStatus, request, timeout=TIMEOUT_S)
-                       for i, stub in stubs.items()}
-        respostas = {}
-        for i, pedido in pedidos.items():
-            try:
-                respostas[i] = pedido.result()
-            except grpc.RpcError as erro:
-                if erro.code() in ERROS_DE_INDISPONIBILIDADE:
-                    print(f"controlador {i} não respondeu ({erro.code().name})")
-                    continue
-                context.abort(erro.code(), erro.details())
-        if not respostas:
-            context.abort(grpc.StatusCode.UNAVAILABLE, "nenhum controlador respondeu")
 
-        for i, resposta in respostas.items():
-            apoiadores = [j for j, outra in respostas.items() if concordam(resposta, outra)]
-            if len(apoiadores) >= MAIORIA:
-                divergentes = sorted(set(respostas) - set(apoiadores))
-                for d in divergentes:
-                    print(f"ALERTA: controlador {d} divergiu da maioria em {request.cultura} "
-                          f"(invadido ou com erro?) - resposta dele foi IGNORADA")
-                return marcar(resposta, len(apoiadores), len(respostas), divergentes)
-
-        if len(respostas) == 1:
-
-            unica = next(iter(respostas.values()))
-            return marcar(unica, 1, 1, [])
-        context.abort(grpc.StatusCode.ABORTED,
-                      f"réplicas {sorted(respostas)} discordam entre si e não há maioria")
-
-    def DefinirModo(self, request, context):
-
-        confirmacoes = 0
-        for id_controlador, stub in stubs.items():
-            try:
-                stub.DefinirModo(request, timeout=TIMEOUT_S)
-                confirmacoes += 1
-            except grpc.RpcError as erro:
-                if erro.code() in ERROS_DE_INDISPONIBILIDADE:
-                    print(f"controlador {id_controlador} fora do ar, não recebeu a escrita")
-                    continue
-                context.abort(erro.code(), erro.details())
-        if confirmacoes == 0:
-            context.abort(grpc.StatusCode.UNAVAILABLE, "nenhum controlador recebeu o comando")
-        print(f"{request.cultura}/{request.atuador} -> '{request.modo}' "
-              f"confirmado por {confirmacoes} de {len(stubs)} réplicas")
-        return pb2.ModoResponse(ok=True, confirmacoes=confirmacoes,
-                                mensagem=f"aplicado em {confirmacoes} de {len(stubs)} réplicas")
-
-def concordam(a, b):
-
-    if set(a.leituras) != set(b.leituras):
-        return False
-    for g in a.leituras:
-        if abs(a.leituras[g] - b.leituras[g]) > TOLERANCIA:
-            return False
-    for nome in a.atuadores:
-        if (a.atuadores[nome].ligado != b.atuadores[nome].ligado or
-                a.atuadores[nome].modo != b.atuadores[nome].modo):
+def _plausivel(leituras):
+    for grandeza, valor in leituras.items():
+        minimo, maximo = LIMITES.get(grandeza, (float("-inf"), float("inf")))
+        if not minimo <= valor <= maximo:
             return False
     return True
 
-def marcar(resposta, votos, consultados, divergentes):
 
-    final = pb2.StatusResponse()
-    final.CopyFrom(resposta)
-    final.votos = votos
-    final.consultados = consultados
-    final.divergentes.extend(divergentes)
-    return final
+def _concordam(a, b):
+    comuns = set(a) & set(b)
+    return all(abs(a[g] - b[g]) <= TOLERANCIA for g in comuns)
 
-servidor = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-pb2_grpc.add_EstufaServicer_to_server(ServicoEstufa(), servidor)
-servidor.add_insecure_port(f"[::]:{PORTA_MIDDLEWARE}")
-servidor.start()
-print(f"middleware: servidor gRPC na porta {PORTA_MIDDLEWARE}")
-servidor.wait_for_termination()
+
+def obter_status(cultura):
+    """Consulta todas as réplicas e devolve a resposta em que a maioria concorda."""
+    respostas = []
+    for cid in controladores_validos:
+        try:
+            r = _stub(cid).ObterStatus(pb2.StatusRequest(cultura=cultura), timeout=2)
+            respostas.append(r)
+        except grpc.RpcError as erro:
+            if erro.code() == grpc.StatusCode.NOT_FOUND:
+                raise ValueError(erro.details())
+            print(f"  [middleware] controlador {cid} não respondeu, ignorando")
+
+    if not respostas:
+        raise RuntimeError("nenhum controlador disponível")
+
+    # 1) descarta valores impossíveis
+    validas = []
+    for r in respostas:
+        if _plausivel(dict(r.leituras)):
+            validas.append(r)
+        else:
+            print(f"  [middleware] ALERTA: controlador {r.controlador_id} enviou valores impossíveis, descartado")
+    if not validas:
+        raise RuntimeError("nenhuma resposta confiável")
+
+    # 2) votação: cada resposta ganha um voto de cada réplica que concorda com ela
+    def votos(r):
+        return sum(_concordam(dict(r.leituras), dict(o.leituras)) for o in validas)
+    # mais votos vence; no empate, prefere o líder
+    escolhida = max(validas, key=lambda r: (votos(r), r.lider))
+
+    for r in validas:
+        if not _concordam(dict(r.leituras), dict(escolhida.leituras)):
+            print(f"  [middleware] ALERTA: controlador {r.controlador_id} diverge da maioria")
+    if len(validas) > 1 and votos(escolhida) <= len(validas) // 2:
+        print("  [middleware] aviso: não houve maioria clara")
+    return escolhida
+
+
+def acionar(cultura, atuador, modo):
+    """Envia a ação para todas as réplicas. Basta uma aceitar para dar certo."""
+    sucesso = False
+    mensagem = "nenhum controlador disponível"
+    for cid in controladores_validos:
+        try:
+            r = _stub(cid).AcionarAtuador(
+                pb2.AcaoRequest(cultura=cultura, atuador=atuador, modo=modo), timeout=2)
+            mensagem = r.mensagem
+            if r.sucesso:
+                sucesso = True
+        except grpc.RpcError:
+            print(f"  [middleware] controlador {cid} não respondeu, tentando o próximo")
+    return sucesso, mensagem

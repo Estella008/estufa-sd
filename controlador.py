@@ -1,190 +1,154 @@
-import json, os, random, sys, threading
+import json, sys
+import paho.mqtt.client as mqtt
 from concurrent import futures
 import grpc
-import paho.mqtt.client as mqtt
 import estufa_pb2 as pb2
 import estufa_pb2_grpc as pb2_grpc
-from config import ATUADORES, CULTURAS, FAIXAS, GRANDEZAS, MODOS, NUM_CONTROLADORES, porta_controlador
+from config import controladores_validos, grandezas, atuadores
+import db
 
-if len(sys.argv) < 2 or sys.argv[1] not in [str(i) for i in range(1, NUM_CONTROLADORES + 1)]:
-    print(f"uso: py controlador.py <id>   (id de 1 a {NUM_CONTROLADORES})")
+if len(sys.argv) < 2:
+    print("uso: python controlador.py <id> [malicioso]")
     sys.exit(1)
-MEU_ID = int(sys.argv[1])
-ARQUIVO = f"dados_controlador_{MEU_ID}.json"
+controlador_id = int(sys.argv[1])
+if controlador_id not in controladores_validos:
+    print(f"ID de controlador inválido: {controlador_id}")
+    sys.exit(1)
 
-if os.path.exists(ARQUIVO):
-    with open(ARQUIVO) as f:
-        salvo = json.load(f)
-    print(f"estado recuperado de {ARQUIVO}")
-else:
-    salvo = {}
+# modo de teste: simula um controlador invadido que devolve valores falsos
+malicioso = len(sys.argv) > 2 and sys.argv[2] == "malicioso"
+if malicioso:
+    print(">>> ATENÇÃO: controlador em modo MALICIOSO (valores falsos) <<<")
 
-leituras = salvo.get("leituras", {})
-ultimo_comando = salvo.get("comandos", {})
-modos = salvo.get("modos", {})
+# cada réplica tem seu próprio banco (controlador_1.db, controlador_2.db, ...)
+db.conectar(controlador_id)
 
-trava = threading.RLock()
-
-falha_injetada = False
-
-def salvar():
-    with open(ARQUIVO, "w") as f:
-        json.dump({"leituras": leituras, "comandos": ultimo_comando, "modos": modos}, f, indent=2)
-
-controladores_online = {MEU_ID}
+controladores_online = {controlador_id}
+manual = set()   # atuadores que o cliente controla na mão: {"tomate/irrigacao", ...}
 
 def sou_lider():
-    return MEU_ID == min(controladores_online)
+    return controlador_id == min(controladores_online)
+
 
 def decidir(cultura, grandeza, valor):
-    if grandeza not in FAIXAS[cultura]:
+    if grandeza not in grandezas[cultura]:
         return []
-    minimo, maximo = FAIXAS[cultura][grandeza]
-    meio = (minimo + maximo) / 2
-
-    def regra(atuador, ligar_se, desligar_se):
-        if ligar_se:
-            return [(atuador, True, f"{grandeza} {valor}")]
-        if desligar_se:
-            return [(atuador, False, f"{grandeza} {valor}")]
-        return []
-
+    minimo, maximo = grandezas[cultura][grandeza]
     if grandeza == "temperatura":
-        return (regra("ventilacao", valor > maximo, valor <= meio) +
-                regra("aquecimento", valor < minimo, valor >= meio))
+        return [("ventilacao", valor > maximo, f"temp {valor}"),
+                ("aquecimento", valor < minimo, f"temp {valor}")]
     if grandeza == "umidade_solo":
-        return regra("irrigacao", valor < minimo, valor >= meio)
+        return [("irrigacao", valor < minimo, f"solo {valor}%")]
     if grandeza == "luminosidade":
-        return regra("iluminacao", valor < minimo, valor >= meio)
+        return [("iluminacao", valor < minimo, f"luz {valor}")]
     return []
 
-def aplicar(cultura, atuador, ligar, motivo, forcar=False):
+
+def processar_comando(client, cultura, atuador, ligar, motivo):
     chave = f"{cultura}/{atuador}"
-    if ultimo_comando.get(chave) == ligar and not forcar:
+    # se o cliente assumiu o controle desse atuador, a regra automática não mexe
+    if chave in manual:
         return
-    ultimo_comando[chave] = ligar
+    # se o banco já diz que o atuador está nesse estado, não faz nada
+    if db.estado_atual(cultura).get(atuador) == ligar:
+        return
+    # todas as réplicas gravam (assim o novo líder já sabe o estado)
+    db.salvar_comando(cultura, atuador, ligar, motivo)
     if sou_lider():
         mensagem = json.dumps({"ligar": ligar, "motivo": motivo})
         client.publish(f"estufa/{cultura}/atuador/{atuador}/comando", mensagem, qos=1)
-        print(f"[LÍDER {MEU_ID}] {chave} -> {'LIGAR' if ligar else 'DESLIGAR'} ({motivo})")
+        print(f"[LÍDER {controlador_id}] {chave} -> {'LIGAR' if ligar else 'DESLIGAR'} ({motivo})")
     else:
-        print(f"[réplica {MEU_ID}] anotei {chave}={ligar}")
+        print(f"[réplica {controlador_id}] anotei {chave}={ligar} (quem envia é o líder)")
 
-class ServicoControlador(pb2_grpc.ControladorServicer):
-
-    def ObterStatus(self, request, context):
-        cultura = request.cultura
-        if cultura not in FAIXAS:
-            context.abort(grpc.StatusCode.NOT_FOUND, f"cultura '{cultura}' não existe")
-        with trava:
-            resposta = pb2.StatusResponse(
-                cultura=cultura,
-                leituras={g: v for k, v in leituras.items()
-                          for c, g in [k.split("/")] if c == cultura},
-                atuadores={a: pb2.Atuador(ligado=ultimo_comando.get(f"{cultura}/{a}", False),
-                                          modo=modos.get(f"{cultura}/{a}", "auto"))
-                           for a in ATUADORES},
-                faixas={g: pb2.Faixa(minimo=lo, maximo=hi) for g, (lo, hi) in FAIXAS[cultura].items()},
-                controlador_id=MEU_ID,
-                lider=sou_lider(),
-            )
-        if falha_injetada:
-
-            for g in resposta.leituras:
-                resposta.leituras[g] += random.uniform(15, 30)
-            for a in resposta.atuadores.values():
-                a.ligado = not a.ligado
-            print(f"[INVADIDO {MEU_ID}] respondi valores FALSOS sobre {cultura}")
-        return resposta
-
-    def DefinirModo(self, request, context):
-        cultura, atuador, modo = request.cultura, request.atuador, request.modo
-        if cultura not in FAIXAS or atuador not in ATUADORES or modo not in MODOS:
-            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "cultura, atuador ou modo inválido")
-        with trava:
-            modos[f"{cultura}/{atuador}"] = modo
-            print(f"[{MEU_ID}] modo de {cultura}/{atuador} agora é '{modo}'")
-            if modo != "auto":
-                aplicar(cultura, atuador, modo == "ligado", "manual pelo painel", forcar=True)
-            salvar()
-        return pb2.ModoResponse(ok=True, mensagem=f"controlador {MEU_ID} aplicou", confirmacoes=1)
-
-    def InjetarFalha(self, request, context):
-        global falha_injetada
-        falha_injetada = request.ativa
-        print(f"!!! controlador {MEU_ID}: modo INVADIDO {'ATIVADO' if falha_injetada else 'desativado'} !!!")
-        return pb2.ModoResponse(ok=True, mensagem="ok", confirmacoes=1)
 
 def ao_conectar(client, userdata, flags, reason_code, properties):
-    print(f"controlador {MEU_ID} conectado!")
-    client.publish(f"estufa/controladores/{MEU_ID}", "online", qos=1, retain=True)
+    print(f"controlador {controlador_id} conectado!")
+    client.publish(f"estufa/controladores/{controlador_id}", "online", qos=1, retain=True)
     client.subscribe("estufa/controladores/+", qos=1)
     client.subscribe("estufa/+/sensor/+", qos=1)
 
+
 def ao_receber(client, userdata, msg):
+    # mensagens de status dos controladores (eleição de líder)
     if msg.topic.startswith("estufa/controladores/"):
         outro_id = int(msg.topic.split("/")[2])
         status = msg.payload.decode()
-        with trava:
-            era_lider = sou_lider()
-            if status == "online":
-                controladores_online.add(outro_id)
-            else:
-                controladores_online.discard(outro_id)
-            print(f"controlador {outro_id} está {status} | vivos: {sorted(controladores_online)}")
-            if sou_lider() and not era_lider:
-                print(f">>> controlador {MEU_ID}: AGORA EU SOU O LÍDER <<<")
+        era_lider = sou_lider()
+        if status == "online":
+            controladores_online.add(outro_id)
+        else:
+            controladores_online.discard(outro_id)
+        print(f"controlador {outro_id} está {status} | vivos: {sorted(controladores_online)}")
+        if sou_lider() and not era_lider:
+            print(f">>> controlador {controlador_id}: AGORA EU SOU O LÍDER <<<")
         return
 
-    dados = json.loads(msg.payload)
-    cultura = dados.get("cultura")
-    if cultura not in FAIXAS:
-        print(f"leitura de cultura desconhecida ignorada: {cultura}")
+    # mensagens dos sensores
+    try:
+        dados = json.loads(msg.payload)
+        cultura, grandeza, valor = dados["cultura"], dados["grandeza"], dados["valor"]
+    except (json.JSONDecodeError, KeyError):
+        print("mensagem inválida:", msg.payload)
+        return
+    if cultura not in grandezas:
+        print("cultura desconhecida:", cultura)
         return
 
-    grandeza, valor = dados.get("grandeza"), dados.get("valor")
-    if grandeza not in GRANDEZAS or not isinstance(valor, (int, float)) \
-            or not GRANDEZAS[grandeza][0] <= valor <= GRANDEZAS[grandeza][1]:
-        print(f"leitura impossível descartada: {cultura} {grandeza}={valor}")
-        return
-    with trava:
-        leituras[f"{cultura}/{dados['grandeza']}"] = dados["valor"]
-        for atuador, ligar, motivo in decidir(cultura, dados["grandeza"], dados["valor"]):
-            if modos.get(f"{cultura}/{atuador}", "auto") == "auto":
-                aplicar(cultura, atuador, ligar, motivo)
-        salvar()
+    db.salvar_leitura(cultura, grandeza, valor)
+    for atuador, ligar, motivo in decidir(cultura, grandeza, valor):
+        processar_comando(client, cultura, atuador, ligar, motivo)
 
-def sincronizar_com_outra_replica():
-    for outro_id in range(1, NUM_CONTROLADORES + 1):
-        if outro_id == MEU_ID:
-            continue
-        try:
-            with grpc.insecure_channel(f"localhost:{porta_controlador(outro_id)}") as canal:
-                stub = pb2_grpc.ControladorStub(canal)
-                for cultura in CULTURAS:
-                    r = stub.ObterStatus(pb2.StatusRequest(cultura=cultura), timeout=1)
-                    for atuador, info in r.atuadores.items():
-                        modos[f"{cultura}/{atuador}"] = info.modo
-                        ultimo_comando[f"{cultura}/{atuador}"] = info.ligado
-            print(f"estado sincronizado com o controlador {outro_id}")
-            return
-        except grpc.RpcError:
-            continue
-    print("nenhuma outra réplica respondeu; seguindo com o estado do disco")
 
-sincronizar_com_outra_replica()
+class ServicoControlador(pb2_grpc.ControladorServicer):
+    def ObterStatus(self, request, context):
+        cultura = request.cultura
+        if cultura not in grandezas:
+            context.abort(grpc.StatusCode.NOT_FOUND, f"cultura '{cultura}' não existe")
+        # tudo vem do banco: se o controlador reiniciar, o estado continua lá
+        leituras = db.leituras_atuais(cultura)
+        if malicioso:
+            leituras = {g: v + 15 for g, v in leituras.items()}
+        return pb2.StatusResponse(
+            cultura=cultura,
+            leituras=leituras,
+            atuadores=db.estado_atual(cultura),
+            controlador_id=controlador_id,
+            lider=sou_lider(),
+        )
 
-client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"controlador-{MEU_ID}")
+    def AcionarAtuador(self, request, context):
+        cultura, atuador, modo = request.cultura, request.atuador, request.modo
+        if cultura not in grandezas or atuador not in atuadores or modo not in ("ligar", "desligar", "auto"):
+            return pb2.AcaoResponse(sucesso=False, mensagem="pedido inválido", controlador_id=controlador_id)
+        chave = f"{cultura}/{atuador}"
+        if modo == "auto":
+            manual.discard(chave)   # a próxima leitura do sensor decide
+            return pb2.AcaoResponse(sucesso=True, mensagem=f"{chave} voltou para o automático",
+                                    controlador_id=controlador_id)
+        ligar = modo == "ligar"
+        manual.add(chave)
+        db.salvar_comando(cultura, atuador, ligar, "cliente")
+        if sou_lider():
+            mensagem = json.dumps({"ligar": ligar, "motivo": "cliente"})
+            client.publish(f"estufa/{cultura}/atuador/{atuador}/comando", mensagem, qos=1)
+        print(f"[{controlador_id}] cliente pediu {chave} -> {modo.upper()}")
+        return pb2.AcaoResponse(sucesso=True, mensagem=f"{chave} -> {modo}", controlador_id=controlador_id)
+
+
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"controlador-{controlador_id}")
 client.on_connect = ao_conectar
 client.on_message = ao_receber
 
-client.will_set(f"estufa/controladores/{MEU_ID}", "offline", qos=1, retain=True)
+# se este controlador cair, o broker avisa os outros publicando "offline"
+client.will_set(f"estufa/controladores/{controlador_id}", "offline", qos=1, retain=True)
 client.connect("localhost", 1883, keepalive=5)
-client.loop_start()
+client.loop_start()   # MQTT roda em segundo plano
 
+PORTA_GRPC = 50050 + controlador_id
 servidor = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
 pb2_grpc.add_ControladorServicer_to_server(ServicoControlador(), servidor)
-servidor.add_insecure_port(f"[::]:{porta_controlador(MEU_ID)}")
+servidor.add_insecure_port(f"[::]:{PORTA_GRPC}")
 servidor.start()
-print(f"controlador {MEU_ID}: servidor gRPC na porta {porta_controlador(MEU_ID)}")
+print(f"controlador {controlador_id}: servidor gRPC na porta {PORTA_GRPC}")
 servidor.wait_for_termination()

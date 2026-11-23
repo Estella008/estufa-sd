@@ -26,7 +26,8 @@ if _version_not_supported:
 
 
 class ControladorStub:
-    """Missing associated documentation comment in .proto file."""
+    """Serviço oferecido por cada controlador
+    """
 
     def __init__(self, channel):
         """Constructor.
@@ -35,39 +36,31 @@ class ControladorStub:
             channel: A grpc.Channel.
         """
         self.ObterStatus = channel.unary_unary(
-                '/estufa.Controlador/ObterStatus',
+                '/Controlador/ObterStatus',
                 request_serializer=estufa__pb2.StatusRequest.SerializeToString,
                 response_deserializer=estufa__pb2.StatusResponse.FromString,
                 _registered_method=True)
-        self.DefinirModo = channel.unary_unary(
-                '/estufa.Controlador/DefinirModo',
-                request_serializer=estufa__pb2.ModoRequest.SerializeToString,
-                response_deserializer=estufa__pb2.ModoResponse.FromString,
-                _registered_method=True)
-        self.InjetarFalha = channel.unary_unary(
-                '/estufa.Controlador/InjetarFalha',
-                request_serializer=estufa__pb2.FalhaRequest.SerializeToString,
-                response_deserializer=estufa__pb2.ModoResponse.FromString,
+        self.AcionarAtuador = channel.unary_unary(
+                '/Controlador/AcionarAtuador',
+                request_serializer=estufa__pb2.AcaoRequest.SerializeToString,
+                response_deserializer=estufa__pb2.AcaoResponse.FromString,
                 _registered_method=True)
 
 
 class ControladorServicer:
-    """Missing associated documentation comment in .proto file."""
+    """Serviço oferecido por cada controlador
+    """
 
     def ObterStatus(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """devolve as leituras e o estado dos atuadores de uma cultura
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def DefinirModo(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def InjetarFalha(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+    def AcionarAtuador(self, request, context):
+        """liga/desliga um atuador manualmente, ou devolve para o automático
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -80,26 +73,22 @@ def add_ControladorServicer_to_server(servicer, server):
                     request_deserializer=estufa__pb2.StatusRequest.FromString,
                     response_serializer=estufa__pb2.StatusResponse.SerializeToString,
             ),
-            'DefinirModo': grpc.unary_unary_rpc_method_handler(
-                    servicer.DefinirModo,
-                    request_deserializer=estufa__pb2.ModoRequest.FromString,
-                    response_serializer=estufa__pb2.ModoResponse.SerializeToString,
-            ),
-            'InjetarFalha': grpc.unary_unary_rpc_method_handler(
-                    servicer.InjetarFalha,
-                    request_deserializer=estufa__pb2.FalhaRequest.FromString,
-                    response_serializer=estufa__pb2.ModoResponse.SerializeToString,
+            'AcionarAtuador': grpc.unary_unary_rpc_method_handler(
+                    servicer.AcionarAtuador,
+                    request_deserializer=estufa__pb2.AcaoRequest.FromString,
+                    response_serializer=estufa__pb2.AcaoResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'estufa.Controlador', rpc_method_handlers)
+            'Controlador', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('estufa.Controlador', rpc_method_handlers)
+    server.add_registered_method_handlers('Controlador', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
 class Controlador:
-    """Missing associated documentation comment in .proto file."""
+    """Serviço oferecido por cada controlador
+    """
 
     @staticmethod
     def ObterStatus(request,
@@ -115,7 +104,7 @@ class Controlador:
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/estufa.Controlador/ObterStatus',
+            '/Controlador/ObterStatus',
             estufa__pb2.StatusRequest.SerializeToString,
             estufa__pb2.StatusResponse.FromString,
             options,
@@ -129,7 +118,7 @@ class Controlador:
             _registered_method=True)
 
     @staticmethod
-    def DefinirModo(request,
+    def AcionarAtuador(request,
             target,
             options=(),
             channel_credentials=None,
@@ -142,151 +131,9 @@ class Controlador:
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/estufa.Controlador/DefinirModo',
-            estufa__pb2.ModoRequest.SerializeToString,
-            estufa__pb2.ModoResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def InjetarFalha(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/estufa.Controlador/InjetarFalha',
-            estufa__pb2.FalhaRequest.SerializeToString,
-            estufa__pb2.ModoResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-
-class EstufaStub:
-    """Missing associated documentation comment in .proto file."""
-
-    def __init__(self, channel):
-        """Constructor.
-
-        Args:
-            channel: A grpc.Channel.
-        """
-        self.ObterStatus = channel.unary_unary(
-                '/estufa.Estufa/ObterStatus',
-                request_serializer=estufa__pb2.StatusRequest.SerializeToString,
-                response_deserializer=estufa__pb2.StatusResponse.FromString,
-                _registered_method=True)
-        self.DefinirModo = channel.unary_unary(
-                '/estufa.Estufa/DefinirModo',
-                request_serializer=estufa__pb2.ModoRequest.SerializeToString,
-                response_deserializer=estufa__pb2.ModoResponse.FromString,
-                _registered_method=True)
-
-
-class EstufaServicer:
-    """Missing associated documentation comment in .proto file."""
-
-    def ObterStatus(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def DefinirModo(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-
-def add_EstufaServicer_to_server(servicer, server):
-    rpc_method_handlers = {
-            'ObterStatus': grpc.unary_unary_rpc_method_handler(
-                    servicer.ObterStatus,
-                    request_deserializer=estufa__pb2.StatusRequest.FromString,
-                    response_serializer=estufa__pb2.StatusResponse.SerializeToString,
-            ),
-            'DefinirModo': grpc.unary_unary_rpc_method_handler(
-                    servicer.DefinirModo,
-                    request_deserializer=estufa__pb2.ModoRequest.FromString,
-                    response_serializer=estufa__pb2.ModoResponse.SerializeToString,
-            ),
-    }
-    generic_handler = grpc.method_handlers_generic_handler(
-            'estufa.Estufa', rpc_method_handlers)
-    server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('estufa.Estufa', rpc_method_handlers)
-
-
- # This class is part of an EXPERIMENTAL API.
-class Estufa:
-    """Missing associated documentation comment in .proto file."""
-
-    @staticmethod
-    def ObterStatus(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/estufa.Estufa/ObterStatus',
-            estufa__pb2.StatusRequest.SerializeToString,
-            estufa__pb2.StatusResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def DefinirModo(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/estufa.Estufa/DefinirModo',
-            estufa__pb2.ModoRequest.SerializeToString,
-            estufa__pb2.ModoResponse.FromString,
+            '/Controlador/AcionarAtuador',
+            estufa__pb2.AcaoRequest.SerializeToString,
+            estufa__pb2.AcaoResponse.FromString,
             options,
             channel_credentials,
             insecure,
