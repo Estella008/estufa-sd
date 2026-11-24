@@ -74,7 +74,8 @@ def ao_receber(client, userdata, msg):
     if msg.topic.startswith("estufa/controladores/"):
         outro_id = int(msg.topic.split("/")[2])
         status = msg.payload.decode()
-        era_lider = sou_lider()
+        era_lider = sou_lider()     
+        
         if status == "online":
             controladores_online.add(outro_id)
         else:
