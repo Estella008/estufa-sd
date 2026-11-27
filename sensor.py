@@ -24,7 +24,7 @@ client.loop_start()
 
 while True:
     for grandeza, (minimo, maximo) in grandezas[cultura].items():
-        valor = round(random.uniform(minimo, maximo), 1)
+        valor = round(random.uniform(minimo - 10, maximo + 10), 1)
         mensagem = json.dumps({"cultura": cultura, "grandeza": grandeza, "valor": valor})
         client.publish(f"estufa/{cultura}/sensor/{grandeza}", mensagem, qos=1)
         print("enviei:", mensagem)

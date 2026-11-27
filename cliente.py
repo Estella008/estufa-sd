@@ -1,4 +1,4 @@
-# Cliente: acompanha e controla a estufa através do middleware.
+
 import middleware
 from config import grandezas, atuadores
 

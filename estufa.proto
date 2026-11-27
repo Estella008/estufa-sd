@@ -1,13 +1,8 @@
-// Contrato entre o cliente e os controladores (gRPC).
-// Depois de alterar este arquivo, gere o código Python com:
-//   python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. estufa.proto
-syntax = "proto3";
 
-// Serviço oferecido por cada controlador
 service Controlador {
-  // devolve as leituras e o estado dos atuadores de uma cultura
+  
   rpc ObterStatus (StatusRequest) returns (StatusResponse);
-  // liga/desliga um atuador manualmente, ou devolve para o automático
+  
   rpc AcionarAtuador (AcaoRequest) returns (AcaoResponse);
 }
 

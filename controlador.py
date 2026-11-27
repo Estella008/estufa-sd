@@ -15,12 +15,12 @@ if controlador_id not in controladores_validos:
     print(f"ID de controlador inválido: {controlador_id}")
     sys.exit(1)
 
-# modo de teste: simula um controlador invadido que devolve valores falsos
+
 malicioso = len(sys.argv) > 2 and sys.argv[2] == "malicioso"
 if malicioso:
     print(">>> ATENÇÃO: controlador em modo MALICIOSO (valores falsos) <<<")
 
-# cada réplica tem seu próprio banco (controlador_1.db, controlador_2.db, ...)
+
 db.conectar(controlador_id)
 
 controladores_online = {controlador_id}
@@ -46,13 +46,13 @@ def decidir(cultura, grandeza, valor):
 
 def processar_comando(client, cultura, atuador, ligar, motivo):
     chave = f"{cultura}/{atuador}"
-    # se o cliente assumiu o controle desse atuador, a regra automática não mexe
+   
     if chave in manual:
         return
-    # se o banco já diz que o atuador está nesse estado, não faz nada
+    
     if db.estado_atual(cultura).get(atuador) == ligar:
         return
-    # todas as réplicas gravam (assim o novo líder já sabe o estado)
+    
     db.salvar_comando(cultura, atuador, ligar, motivo)
     if sou_lider():
         mensagem = json.dumps({"ligar": ligar, "motivo": motivo})
@@ -74,7 +74,7 @@ def ao_receber(client, userdata, msg):
     if msg.topic.startswith("estufa/controladores/"):
         outro_id = int(msg.topic.split("/")[2])
         status = msg.payload.decode()
-        era_lider = sou_lider()     
+        era_lider = sou_lider()    
         
         if status == "online":
             controladores_online.add(outro_id)

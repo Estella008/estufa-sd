@@ -1,13 +1,12 @@
-# Middleware: o cliente só conversa com ele.
-# Ele esconde as réplicas, trata quedas e compara as respostas.
+
 import grpc
 import estufa_pb2 as pb2
 import estufa_pb2_grpc as pb2_grpc
 from config import controladores_validos
 
-TOLERANCIA = 3.0   # diferença aceitável entre réplicas (leituras chegam em momentos diferentes)
+TOLERANCIA = 3.0   
 
-# valores fisicamente possíveis; fora disso a resposta é descartada
+
 LIMITES = {
     "temperatura": (-10, 60),
     "umidade_ar": (0, 100),
@@ -35,7 +34,7 @@ def _concordam(a, b):
 
 
 def obter_status(cultura):
-    """Consulta todas as réplicas e devolve a resposta em que a maioria concorda."""
+    
     respostas = []
     for cid in controladores_validos:
         try:
@@ -49,7 +48,7 @@ def obter_status(cultura):
     if not respostas:
         raise RuntimeError("nenhum controlador disponível")
 
-    # 1) descarta valores impossíveis
+    
     validas = []
     for r in respostas:
         if _plausivel(dict(r.leituras)):
@@ -59,10 +58,10 @@ def obter_status(cultura):
     if not validas:
         raise RuntimeError("nenhuma resposta confiável")
 
-    # 2) votação: cada resposta ganha um voto de cada réplica que concorda com ela
+    
     def votos(r):
         return sum(_concordam(dict(r.leituras), dict(o.leituras)) for o in validas)
-    # mais votos vence; no empate, prefere o líder
+    
     escolhida = max(validas, key=lambda r: (votos(r), r.lider))
 
     for r in validas:
@@ -74,7 +73,7 @@ def obter_status(cultura):
 
 
 def acionar(cultura, atuador, modo):
-    """Envia a ação para todas as réplicas. Basta uma aceitar para dar certo."""
+   
     sucesso = False
     mensagem = "nenhum controlador disponível"
     for cid in controladores_validos:
